@@ -1,69 +1,123 @@
+import datetime
+import json
 import os
+import re
+import shutil
+import zipfile
 from pathlib import Path
 from typing import List
 import requests
 import dotenv
+import execjs
 
 
 class Part4:
-    def __init__(self, input_dir: str, output_dir: str, ip: str, text_port: str, table_port: str):
+    def __init__(self, input_dir: str, output_dir: str, ocr_ip: str, text_port: str, table_port: str,
+                 nari_base: str, nari_user: str, nari_pwd: str):
         self.input_dir: Path = Path(input_dir)
         self.output_dir: Path = Path(output_dir)
         self.root_path: Path = Path(__file__).parent
         # dotenv.load_dotenv(self.root_path.joinpath("env"))
-        self.ocr_text = f"http://{ip}:{text_port}/ysocr/ocr"
-        self.ocr_table = f"http://{ip}:{table_port}/api/table/task"
+        self.ocr_text = f"http://{ocr_ip}:{text_port}/ysocr/ocr"
+        self.ocr_table = f"http://{ocr_ip}:{table_port}/api/table/task"
+        self.nari_url = f"https://{nari_base}"
+        self.pdf_list: List[dict] = self.get_pdf()
+        self.zip_path = None
+        self.nari_user = nari_user
+        self.nari_pwd = nari_pwd
 
     def get_pdf(self):
         pdf_list = []
         if self.input_dir.is_dir():
             for item in self.input_dir.iterdir():
                 if item.is_file() and item.suffix.lower() == ".pdf":
-                    pdf_list.append({"name": item.name, "path": item})
+                    pdf_list.append({"name": item.name, "source": item.__str__(), "target": None,
+                                     "header": None, "wbs": None, "department": None})
         else:
             raise Exception("输入的扫描路径不是一个文件夹.")
         return pdf_list
 
-    def get_ocr_text(self, pdf_list: List[dict]):
-        for pdf_info in pdf_list:
-            response = requests.post(self.ocr_text, files={"file": open(pdf_info['path'], "rb"),
+    def get_ocr_text(self):
+        for pdf_info in self.pdf_list:
+            response = requests.post(self.ocr_text, files={"file": open(pdf_info['source'], "rb"),
                                                            "active_desalt_signet": True})
-            print(response.json())
-            return
+            if response.status_code == 200 and response.json()['code'] == 200:
+                for index, row in enumerate(response.json()['img_data_list']):
+                    text_list = [i['text_string'].strip() for i in row['text_info'] if i['text_string'].strip()]
+                    text = ''.join(text_list).replace(' ', '')
+                    if len(text_list):
+                        pdf_info['header'] = text_list[0]
+                    find_wbs = re.findall(r"WBS号([A-Za-z0-9]{12})", text)
+                    if find_wbs:
+                        pdf_info['wbs'] = find_wbs[0]
+                    find_department = re.findall(r"项目部门(.*?)项目经理", text)
+                    if find_department:
+                        pdf_info['department'] = find_department[0]
+                    print(pdf_info)
+                    break
+        return
 
-    def get_ocr_table(self, pdf_list: List[dict]):
-        for pdf_info in pdf_list:
-            response = requests.post(self.ocr_table, files={"file": open(pdf_info['path'], "rb"),
-                                                            "active_desalt_signet": True})
-            print(response.json())
-            return
-        # try:
-        #     ocr_url = f"http://{self.ocr_url}/ysocr/ocr"
-        #     response = requests.post(ocr_url, files={"file": open(os.path.join(self.pdf_root_path, pdf['path']), "rb"),
-        #                                              "active_desalt_signet": True})
-        #     try:
-        #         response_json = response.json()
-        #         print(response_json)
-        #     except Exception as err:
-        #         return False, f"{pdf['name']}识别失败：{response.text}"
-        #     pdf_text = []
-        #     for index, row in enumerate(response_json["img_data_list"]):
-        #         text = ''
-        #         text_list = [i['text_string'] for i in row['text_info']]
-        #         split_text_list = text_list
-        #         if len(text_list) > 2 and index > 2:
-        #             split_text_list = text_list[2:]
-        #         for i in split_text_list:
-        #             text += str(i).replace(' ', '')
-        #         pdf_text.append(text)
-        #     pdf['text'] = pdf_text
-        #     return True, pdf
-        # except Exception as ex:
-        #     print(ex)
-        #     return False, pdf
+    def move_and_mkdir(self, pdf_info):
+        file_path = self.output_dir.joinpath(pdf_info['department'], pdf_info['wbs'],
+                                             f"{pdf_info['header']}.pdf")
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(pdf_info['source'], file_path)
+        pdf_info['target'] = file_path.__str__()
+        return pdf_info
+
+    def filing(self):
+        for index, pdf_info in enumerate(self.pdf_list):
+            if pdf_info['header'] and pdf_info['wbs'] and pdf_info['department']:
+                self.pdf_list[index] = self.move_and_mkdir(pdf_info)
+        return
+
+    def packing(self):
+        base_name = self.output_dir.parent / datetime.datetime.today().strftime("%Y%m%d")
+        self.zip_path = shutil.make_archive(base_name.__str__(),
+                                            'zip',
+                                            self.output_dir)
+        return
+
+    def get_execjs(self, file, *args):
+        with open(file, "r") as file:
+            js_code = file.read()
+        js_engine = execjs.compile(js_code)
+        js_result = js_engine.call(*args)
+        print(js_result)
+        return js_result
+
+    def get_token(self):
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        }
+        rsa = requests.get("https://d-nari.sgepri.sgcc.com.cn/auth/username/rsa", headers=headers)
+        print(rsa.json())
+        if rsa.status_code != 200 or rsa.json().get('code', None) != 0:
+            raise Exception("rsa错误")
+        rsa_parameter = rsa.json()['result']
+        v_pwd = self.get_execjs("v.js", "getV", self.nari_pwd)
+        r = v_pwd + "," + rsa_parameter['requestId'] + "," + self.nari_pwd
+        print(r)
+        rsa_pwd = self.get_execjs("RsaUtils.js", "getEncryptedString",
+                                  rsa_parameter['exponent'], "", rsa_parameter['modulus'], r)
+        login = requests.post("https://d-nari.sgepri.sgcc.com.cn/auth/username/login",
+                              files={"username": self.nari_user,
+                                     "password": rsa_pwd,
+                                     "requestId": rsa_parameter['requestId'],
+                                     "verificationCode": None},
+                              headers=headers)
+        print(login.json())
+
+    def main(self):
+        # self.get_ocr_text()
+        # self.filing()
+        # self.packing()
+        # print(self.zip_path)
+        self.get_token()
 
 
 if __name__ == '__main__':
-    p = Part4("./扫描", "", "172.28.2.102", "50000", "15263")
-    print(p.get_pdf())
-    p.get_ocr_data(p.get_pdf())
+    p = Part4("./扫描", "./输出", "172.28.2.102", "50000", "15263", "d-nari.sgepri.sgcc.com.cn",
+              "4611210148", "Lzw721..")
+    p.main()
