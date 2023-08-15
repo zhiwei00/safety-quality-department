@@ -1,14 +1,19 @@
+import array
 import datetime
+import hashlib
 import json
 import os
+import random
 import re
 import shutil
+import string
 import zipfile
 from pathlib import Path
 from typing import List
 import requests
 import dotenv
 import execjs
+import mimetypes
 
 
 class Part4:
@@ -25,6 +30,7 @@ class Part4:
         self.zip_path = None
         self.nari_user = nari_user
         self.nari_pwd = nari_pwd
+        self.cookies = None
 
     def get_pdf(self):
         pdf_list = []
@@ -79,42 +85,44 @@ class Part4:
         return
 
     def get_execjs(self, file, *args):
-        with open(file, "r") as file:
+        with open(Path("js").joinpath(file), "r") as file:
             js_code = file.read()
         js_engine = execjs.compile(js_code)
         js_result = js_engine.call(*args)
-        print(js_result)
         return js_result
 
-    def get_token(self):
+    def get_cookies(self):
         headers = {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
         }
         rsa = requests.get("https://d-nari.sgepri.sgcc.com.cn/auth/username/rsa", headers=headers)
-        print(rsa.json())
         if rsa.status_code != 200 or rsa.json().get('code', None) != 0:
             raise Exception("rsa错误")
         rsa_parameter = rsa.json()['result']
         v_pwd = self.get_execjs("v.js", "getV", self.nari_pwd)
         r = v_pwd + "," + rsa_parameter['requestId'] + "," + self.nari_pwd
-        print(r)
         rsa_pwd = self.get_execjs("RsaUtils.js", "getEncryptedString",
                                   rsa_parameter['exponent'], "", rsa_parameter['modulus'], r)
         login = requests.post("https://d-nari.sgepri.sgcc.com.cn/auth/username/login",
-                              files={"username": self.nari_user,
-                                     "password": rsa_pwd,
-                                     "requestId": rsa_parameter['requestId'],
-                                     "verificationCode": None},
+                              data={"username": self.nari_user,
+                                    "password": rsa_pwd,
+                                    "requestId": rsa_parameter['requestId'],
+                                    "verificationCode": None},
                               headers=headers)
-        print(login.json())
+        if login.status_code == 200 and login.json()['code'] == 0:
+            self.cookies = login.cookies
+            print(login.json())
+            print(login.cookies)
+
 
     def main(self):
         # self.get_ocr_text()
         # self.filing()
         # self.packing()
         # print(self.zip_path)
-        self.get_token()
+        # self.get_cookies()
+        self.upload("I:\Project\safety-quality-department\part4\扫描\项目计划书B2462323012900ZM000000.pdf")
 
 
 if __name__ == '__main__':
