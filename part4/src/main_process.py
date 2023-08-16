@@ -6,12 +6,9 @@ from traceback import print_exc
 from typing import List
 import requests
 from cloud_disk import CloudDisk
-import dotenv
 
 
-# dotenv.load_dotenv(self.root_path.joinpath("env"))
-
-class Part4:
+class MainProcess:
     def __init__(self, input_dir: str, ocr_ip: str, text_port: str, table_port: str,
                  nari_base: str, nari_user: str, nari_pwd: str):
         self.input_dir: Path = Path(input_dir)
@@ -94,11 +91,11 @@ class Part4:
 
 
 if __name__ == '__main__':
-    p = Part4("./扫描",
-              "172.28.2.102",
-              "50000",
-              "15263",
-              "d-nari.sgepri.sgcc.com.cn",
-              "4611210148",
-              "Lzw721..")
+    p = MainProcess("./扫描",
+                    "172.28.2.102",
+                    "50000",
+                    "15263",
+                    "d-nari.sgepri.sgcc.com.cn",
+                    "4611210148",
+                    "Lzw721..")
     p.run()

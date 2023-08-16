@@ -7,6 +7,7 @@ import random
 import copy
 import execjs
 import requests
+from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 
 class CloudDisk:
@@ -15,12 +16,13 @@ class CloudDisk:
         self.nari_user = nari_user
         self.nari_pwd = nari_pwd
         self.file = file
-        self.base_body = self.get_body()
+        self.base_body = None
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
         self.cookies = None
         self.symbolic_link_id = None
         self.file_id = None
         self.status = None
+        self.get_cookies()
 
     def spark_md5_hash(self, file_path):
         with open(file_path, "rb") as file:
@@ -32,20 +34,20 @@ class CloudDisk:
     def get_body(self):
         mime_type, _ = mimetypes.guess_type(self.file)
         p_file = Path(self.file)
-        return {"appId": "YUNPAN",
-                "storeLocation": "ALL",
-                "docLevel": "2",
-                "id": ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(10)),
-                "name": p_file.name,
-                "relativePath": "",
-                "lastModified": int(p_file.stat().st_ctime * 1000),
-                "mimeType": mime_type,
-                "fileSize": p_file.stat().st_size,
-                "fileName": p_file.name,
-                "md5": self.spark_md5_hash(self.file)}
+        self.base_body = {"appId": "YUNPAN",
+                          "storeLocation": "ALL",
+                          "docLevel": "2",
+                          "id": ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(10)),
+                          "name": p_file.name,
+                          "relativePath": "",
+                          "lastModified": int(p_file.stat().st_ctime * 1000),
+                          "mimeType": mime_type,
+                          "fileSize": p_file.stat().st_size,
+                          "fileName": p_file.name,
+                          "md5": self.spark_md5_hash(self.file)}
 
     def get_execjs(self, file, *args):
-        with open(Path("js").joinpath(file), "r") as file:
+        with open(file, "r") as file:
             js_code = file.read()
         js_engine = execjs.compile(js_code)
         js_result = js_engine.call(*args)
@@ -90,7 +92,7 @@ class CloudDisk:
             self.symbolic_link_id = start.json()['result']['data']['symbolicLinkId']
             self.file_id = start.json()['result']['data']['fileId']
             self.status = start.json()['result']['status']
-            print(start.json())
+            print("start", start.json())
         else:
             raise Exception(f"start err: {start.text}")
 
@@ -99,30 +101,37 @@ class CloudDisk:
             raise Exception(f"upload err: fileId-{self.file_id} status-{self.status}")
         if self.status != "chunks":
             return
-        body = copy.deepcopy(self.base_body)
-        del body['mimeType']
-        del body['fileSize']
-        del body['fileName']
-        body["chunkCount"] = 1
-        with open(self.file, "rb") as f:
-            body["chunk"] = f.read()
-        body['fileId'] = self.file_id
-        body['index'] = 0
+        # 随机16位
+        boundary = '----WebKitFormBoundary' + ''.join(random.sample(string.ascii_letters + string.digits, 16))
+        data = MultipartEncoder(fields={
+            "appId": "YUNPAN",
+            "storeLocation": "ALL",
+            "docLevel": "2",
+            "id": self.base_body['id'],
+            "name": self.base_body['name'],
+            "relativePath": None,
+            "lastModified": str(self.base_body['lastModified']),
+            "fileId": str(self.file_id),
+            "chunkCount": "1",
+            "index": "0",
+            "chunk": ("blob", open(self.file, 'rb'), 'application/octet-stream'),
+            "md5": self.base_body['md5'],
+        }, boundary=boundary)
         response = requests.post(f"{self.nari_url}/dfs-ui/dfs/v2/file/upload/chunk/upload",
-                                 files=body,
+                                 data=data,
                                  headers={
-                                     "Content-Type": "multipart/form-data;boundary=----WebKitFormBoundaryURZ1YFAAcSBUNHKK",
+                                     "Content-Type": data.content_type,
                                      "User-Agent": self.user_agent
                                  },
                                  cookies=self.cookies)
         if response.status_code == 200 and response.json()['code'] == 0:
-            print(response.json())
+            print("upload", response.json())
         else:
             raise Exception(f"upload err: {response.text}")
 
     def upload_submit(self):
         if not self.symbolic_link_id:
-            raise Exception(f"upload err: symbolicLinkId-{self.symbolic_link_id}")
+            raise Exception(f"uploadSubmit err: symbolicLinkId-{self.symbolic_link_id}")
         body = copy.deepcopy(self.base_body)
         del body['mimeType']
         body['symbolicLinkId'] = self.symbolic_link_id
@@ -134,13 +143,15 @@ class CloudDisk:
                                  },
                                  cookies=self.cookies)
         if response.status_code == 200 and response.json()['code'] == 0:
-            print(response.json())
+            print("uploadSubmit", response.json())
         else:
-            raise Exception(f"upload err: {response.text}")
+            raise Exception(f"uploadSubmit err: {response.text}")
 
     def finish(self):
         if not self.file_id:
-            raise Exception(f"upload err: fileId-{self.file_id}")
+            raise Exception(f"finish err: fileId-{self.file_id}")
+        if self.status != "chunks":
+            return
         body = copy.deepcopy(self.base_body)
         del body['mimeType']
         del body['fileSize']
@@ -155,9 +166,9 @@ class CloudDisk:
                                  },
                                  cookies=self.cookies)
         if response.status_code == 200 and response.json()['code'] == 0:
-            print(response.json())
+            print("finish", response.json())
         else:
-            raise Exception(f"upload err: {response.text}")
+            raise Exception(f"finish err: {response.text}")
 
     def upload_num(self):
         response = requests.post(f"{self.nari_url}/ydyy-clouddisk-ui/uds/uploadNum",
@@ -167,22 +178,41 @@ class CloudDisk:
                                  },
                                  cookies=self.cookies)
         if response.status_code == 200:
-            print(response.text)
+            print("uploadNum", response.text)
         else:
-            raise Exception(f"upload err: {response.text}")
+            raise Exception(f"uploadNum err: {response.text}")
 
     def get_doc_count_by_name_and_format_and_parent_id(self):
-        response = requests.post(f"{self.nari_url}/ydyy-clouddisk-ui/ui/myFile/getDocCountByNameAndFormatAndParentId",
-                                 json={"fileName": self.base_body['fileName'], "parentId": "0"},
-                                 headers={
-                                     "Content-Type": "application/json",
-                                     "User-Agent": self.user_agent
-                                 },
-                                 cookies=self.cookies)
-        if response.status_code == 200:
-            print(response.text)
-        else:
-            raise Exception(f"upload err: {response.text}")
+        def request(body, n=None):
+            n = n if n else ""
+            response = requests.post(
+                f"{self.nari_url}/ydyy-clouddisk-ui/ui/myFile/getDocCountByNameAndFormatAndParentId{n}",
+                json=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": self.user_agent
+                },
+                cookies=self.cookies)
+            if response.status_code == 200:
+                print(response.text)
+                return response.json()
+            else:
+                raise Exception(f"getDocCountByNameAndFormatAndParentId err: {response.text}")
+
+        def get_name(prefix: str, suffix: str, n: int):
+            return f"{prefix}({n + 1}).{suffix}"
+
+        fname, ext = self.base_body['fileName'].rsplit(".", 1)
+        first = request({"fileName": self.base_body['fileName'], "parentId": "0"})
+        if first['result'] != 0:
+            second = request({"fileName1": fname, "fileFormat1": ext, "fileFormat": ext, "parentId": "0"}, 2)
+            print({"fileName1": fname, "fileFormat1": ext, "fileFormat": ext, "parentId": "0"})
+            if second['result'] == 0:
+                self.base_body['fileName'] = get_name(fname, ext, 0)
+            else:
+                third = request({"fileName": fname, "fileName1": fname, "fileFormat1": ext, "fileFormat": ext,
+                                 "parentId": "0"}, 3)
+                self.base_body['fileName'] = get_name(fname, ext, int(third['result']))
 
     def create_document(self):
         if not self.symbolic_link_id:
@@ -201,12 +231,11 @@ class CloudDisk:
                                  },
                                  cookies=self.cookies)
         if response.status_code == 200 and response.json()['code'] == 0:
-            print(response.json())
+            print("createDocument", response.json())
         else:
-            raise Exception(f"upload err: {response.text}")
+            raise Exception(f"createDocument err: {response.text}")
 
-    def main(self):
-        self.get_cookies()
+    def run(self):
         self.get_body()
         self.start()
         self.upload()
@@ -218,5 +247,6 @@ class CloudDisk:
 
 
 if __name__ == '__main__':
-    c = CloudDisk("d-nari.sgepri.sgcc.com.cn", "4611210148", "Lzw721..", r"I:\Project\safety-quality-department\part4\需求.png")
-    c.main()
+    c = CloudDisk("d-nari.sgepri.sgcc.com.cn", "4611210148", "Lzw721..",
+                  r"I:\Project\safety-quality-department\part4\需求.png")
+    c.run()
