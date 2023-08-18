@@ -47,7 +47,7 @@ class CloudDisk:
                           "md5": self.spark_md5_hash(self.file)}
 
     def get_execjs(self, file, *args):
-        with open(file, "r") as file:
+        with open(file, "r", encoding='utf-8') as file:
             js_code = file.read()
         js_engine = execjs.compile(js_code)
         js_result = js_engine.call(*args)
@@ -63,7 +63,7 @@ class CloudDisk:
             raise Exception(f"rsa err: {rsa.text}")
         rsa_parameter = rsa.json()['result']
         v_pwd = self.get_execjs("v.js", "getV", self.nari_pwd)
-        r = v_pwd + "," + rsa_parameter['requestId'] + "," + self.nari_pwd
+        r = str(v_pwd) + "," + str(rsa_parameter['requestId']) + "," + str(self.nari_pwd)
         rsa_pwd = self.get_execjs("RsaUtils.js", "getEncryptedString",
                                   rsa_parameter['exponent'], "", rsa_parameter['modulus'], r)
         login = requests.post(f"{self.nari_url}/auth/username/login",

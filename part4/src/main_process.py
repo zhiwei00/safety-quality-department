@@ -2,21 +2,19 @@ import datetime
 import re
 import shutil
 from pathlib import Path
-from traceback import print_exc
 from typing import List
 import requests
-from cloud_disk import CloudDisk
+from .cloud_disk import CloudDisk
 
 
 class MainProcess:
-    def __init__(self, input_dir: str, ocr_ip: str, text_port: str, table_port: str,
+    def __init__(self, input_dir: str, ocr_ip: str, text_port: str,
                  nari_base: str, nari_user: str, nari_pwd: str):
         self.input_dir: Path = Path(input_dir)
         self.output_dir: Path = Path("缓存")
         self.run_time = datetime.datetime.today().strftime("%Y年%m月%d日%H时%M分%S秒")
         self.root_path: Path = Path(__file__).parent
         self.ocr_text = f"http://{ocr_ip}:{text_port}/ysocr/ocr"
-        self.ocr_table = f"http://{ocr_ip}:{table_port}/api/table/task"
         self.nari_base = nari_base
         self.pdf_list: List[dict] = self.get_pdf()
         self.zip_path = None
@@ -77,24 +75,20 @@ class MainProcess:
         return
 
     def run(self):
-        try:
-            cloud_disk = CloudDisk(self.nari_base, self.nari_user, self.nari_pwd, "")
-            self.get_ocr_text()
-            self.filing()
-            self.packing()
-            print(self.zip_path)
-            cloud_disk.file = self.zip_path
-            cloud_disk.run()
-        except Exception as err:
-            print(err)
-            print_exc()
+        cloud_disk = CloudDisk(self.nari_base, self.nari_user, self.nari_pwd, "")
+        self.get_ocr_text()
+        self.filing()
+        self.packing()
+        print(self.zip_path)
+        cloud_disk.file = self.zip_path
+        cloud_disk.run()
+        return self.output_dir
 
 
 if __name__ == '__main__':
     p = MainProcess("./扫描",
                     "172.28.2.102",
                     "50000",
-                    "15263",
                     "d-nari.sgepri.sgcc.com.cn",
                     "4611210148",
                     "Lzw721..")

@@ -4,3 +4,5 @@ requests
 requests-toolbelt
 PyQt5==5.15.9
 PyQt5-stubs==5.15.6
+
+PyYAML==6.0.1

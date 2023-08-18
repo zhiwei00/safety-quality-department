@@ -1,3 +1,4 @@
+import io
 import os
 import sys
 import threading
@@ -5,19 +6,20 @@ import time
 import winreg
 from traceback import print_exc
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QVBoxLayout, QDesktopWidget, QFileDialog, QMessageBox
+from .main_process import MainProcess
+from .config import YamlConfig
 
 
-# from verificationTime import VerificationTime
-# from storehouse import CommercialContractGenerate, msgBox, handle_documents
 def msgBox(box_type: int, box_title: str, box_text: str):
     time.sleep(0.1)
+    type_list = [QMessageBox.Information, QMessageBox.Warning, QMessageBox.Critical]
     # 创建 QMessageBox 对象
     msg_box = QMessageBox()
-    msg_box.setWindowTitle("提示")
-    msg_box.setText("这是一个置顶的提示窗口。")
-    msg_box.setIcon(QMessageBox.Information)
+    msg_box.setWindowTitle(box_title)
+    msg_box.setIcon(type_list[box_type])
+    msg_box.setText(box_text)
     # 设置窗口标志，使其总是置顶
     msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowStaysOnTopHint)
     # 显示提示窗口
@@ -56,29 +58,17 @@ class Ui_MainWindow(object):
         btLayout = QVBoxLayout()
         self.scan = QtWidgets.QPushButton(MainWindow)
         self.scan.setObjectName("scan")
-        self.source = QtWidgets.QPushButton(MainWindow)
-        self.source.setObjectName("source")
-        self.reset = QtWidgets.QPushButton(MainWindow)
-        self.reset.setObjectName("reset")
-        self.rule = QtWidgets.QPushButton(MainWindow)
-        self.rule.setObjectName("open")
-        self.template = QtWidgets.QPushButton(MainWindow)
-        self.template.setObjectName("template")
+        self.config = QtWidgets.QPushButton(MainWindow)
+        self.config.setObjectName("config")
+        self.last_task = QtWidgets.QPushButton(MainWindow)
+        self.last_task.setObjectName("last_task")
         self.submit = QtWidgets.QPushButton(MainWindow)
         self.submit.setObjectName("submit")
-        self.doc = QtWidgets.QPushButton(MainWindow)
-        self.doc.setObjectName("doc")
-        self.copy = QtWidgets.QPushButton(MainWindow)
-        self.copy.setObjectName("copy")
 
         btLayout.addWidget(self.scan)
-        btLayout.addWidget(self.source)
-        btLayout.addWidget(self.reset)
-        btLayout.addWidget(self.rule)
-        btLayout.addWidget(self.template)
+        btLayout.addWidget(self.config)
+        btLayout.addWidget(self.last_task)
         btLayout.addWidget(self.submit)
-        btLayout.addWidget(self.doc)
-        btLayout.addWidget(self.copy)
 
         MainWindow.setLayout(btLayout)
         self.retranslateUi(MainWindow)
@@ -88,13 +78,47 @@ class Ui_MainWindow(object):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "RPA小工具"))
         self.scan.setText(_translate("MainWindow", "选择扫描文件夹"))
-        self.source.setText(_translate("MainWindow", "生成源数据"))
-        self.reset.setText(_translate("MainWindow", "生成模板表"))
-        self.rule.setText(_translate("MainWindow", "打开规则表"))
-        self.template.setText(_translate("MainWindow", "打开模板表"))
+        self.config.setText(_translate("MainWindow", "打开配置文件"))
+        self.last_task.setText(_translate("MainWindow", "运行结果"))
         self.submit.setText(_translate("MainWindow", "执行"))
-        self.doc.setText(_translate("MainWindow", "打开Word文件夹"))
-        self.copy.setText(_translate("MainWindow", "批量复制"))
+
+
+class WorkerThread(QThread):
+    task_finished = pyqtSignal(list)
+
+    def __init__(self, scan_dir, parent=None):
+        super().__init__(parent)
+        self.scan_dir = scan_dir
+        self.task_dir = None
+
+    def get_exception_info(self, exception):
+        output_buffer = io.StringIO()
+        print_exc(file=output_buffer)
+        exception_info = output_buffer.getvalue()
+        output_buffer.close()
+        return exception_info
+
+    def run(self):
+        try:
+            if not self.scan_dir:
+                return self.task_finished.emit([1, "警告", f"未选择扫描文件夹"])
+            yaml_config = YamlConfig('config.yaml')
+            config = yaml_config.read_yaml()
+            input_dir = self.scan_dir
+            ocr_ip = config['ocr']['ip']
+            text_port = config['ocr']['port']
+            nari_base = config['nari']['url']
+            nari_user = config['nari']['user']
+            nari_pwd = config['nari']['pwd']
+            if not ocr_ip or not text_port or not nari_base or not nari_user or not nari_pwd:
+                return self.task_finished.emit([1, "警告", f"请检查配置文件！"])
+            main_process = MainProcess(input_dir, ocr_ip, text_port, nari_base, nari_user, nari_pwd)
+            self.task_dir = main_process.run()
+            return self.task_finished.emit([0, "提示", "任务处理完成"])
+        except Exception as e:
+            print_exc()
+            exception_info = self.get_exception_info(e)
+            return self.task_finished.emit([2, "错误", e.__str__()])
 
 
 class Main(MyQMainWindow, Ui_MainWindow):
@@ -103,16 +127,13 @@ class Main(MyQMainWindow, Ui_MainWindow):
     def __init__(self, parent=None):
         super(Main, self).__init__(parent)
         self.setupUi(self)
-        self.scan_dir = None
-        self.scan.clicked.connect(self.select_folder)
-        # self.source.clicked.connect(self.create_source)
-        # self.reset.clicked.connect(self.create_template)
-        # self.template.clicked.connect(lambda: self.open_excel(0))
-        # self.rule.clicked.connect(lambda: self.open_excel(1))
-        # self.submit.clicked.connect(self.task_run)
-        # self.doc.clicked.connect(lambda: self.open_dir(self.doc_path))
-        # self.copy.clicked.connect(self.bulk_copy)
         self.center()
+        self.scan.clicked.connect(self.select_scan_dir)
+        self.config.clicked.connect(self.open_config)
+        self.last_task.clicked.connect(self.open_last_task)
+        self.submit.clicked.connect(self.start_thread)
+        self.thread = WorkerThread(None)
+        self.thread.task_finished.connect(self.task_finished)
 
     def center(self):
         # 获得屏幕坐标系
@@ -128,92 +149,25 @@ class Main(MyQMainWindow, Ui_MainWindow):
     def select_scan_dir(self):
         folder_path = QFileDialog.getExistingDirectory(self, "选择文件夹")
         print("选择的文件夹路径：" + folder_path)
-        self.scan_dir = folder_path
+        self.thread.scan_dir = folder_path
 
-    def create_source(self):
-        self.setEnabled(False)
+    def open_config(self):
+        os.startfile('config.yaml')
 
-        def Task():
-            try:
-                is_success, result = self.commercialContractGenerate.update_pdf_data()
-                # print(len(self.commercialContractGenerate.pdf_json_data))
-                if is_success:
-                    return msgBox(0, "PDF数据", f"DPF数据识别完成")
-                elif is_success and result:
-                    return msgBox(1, "PDF数据", f"DPF数据识别中出现部分错误\n{result}")
-                else:
-                    return msgBox(2, "PDF数据", f"PDF数据识别失败\n{result}")
-            except Exception as e:
-                msgBox(2, "PDF数据", f"DPF数据识别失败，错误为：{e}")
-            finally:
-                self.setEnabled(True)
-
-        Thread = threading.Thread(target=Task)
-        Thread.start()
-
-    def create_template(self):
-        self.commercialContractGenerate.create_excel()
-
-    def open_excel(self, is_rule: int):
-        self.commercialContractGenerate.open_excel(is_rule)
-
-    def open_dir(self, dir_name):
-        if os.path.exists(dir_name):
-            os.startfile(dir_name)
+    def open_last_task(self):
+        if self.thread.task_dir:
+            os.startfile(self.thread.task_dir)
         else:
-            self.commercialContractGenerate.open_dir(dir_name)
+            msgBox(0, "提示", f"没有运行任务！")
 
-    def task_run(self):
+    def start_thread(self):
         self.setEnabled(False)
+        self.thread.start()
 
-        def Task():
-            try:
-                rule_data = self.commercialContractGenerate.get_excel_data(1)
-                if not rule_data:
-                    return msgBox(1, "配置表", f"规则表为空")
-                print(rule_data)
-                template_data = self.commercialContractGenerate.get_excel_data(0)
-                if not template_data:
-                    return msgBox(1, "配置表", f"模板表为空")
-                print(template_data)
-                print(111)
-                is_success, handle_data = self.commercialContractGenerate.handle_center(template_data, rule_data)
-                if is_success:
-                    self.doc_path = handle_data
-                    return msgBox(0, "执行", f"执行成功，文件生成在{handle_data}目录下")
-                else:
-                    return msgBox(2, "执行", f"执行失败，错误为：{handle_data}")
-            except Exception as e:
-                print_exc()
-                msgBox(2, "执行", f"执行失败，错误为：{e}")
-
-            finally:
-                self.setEnabled(True)
-
-        Thread = threading.Thread(target=Task)
-        Thread.start()
-
-    def bulk_copy(self):
-        dir_choose = QFileDialog.getExistingDirectory(self, "选取文件夹",
-                                                      os.path.dirname(os.path.realpath(sys.argv[0])))
-        if os.path.exists(dir_choose):
-            old_list, new_list = self.commercialContractGenerate.get_file_path(dir_choose)
-            # handle_documents(old_list, new_list)
-            time.sleep(0.2)
-            msgBox(0, "复制", "批量复制完成")
-            self.commercialContractGenerate.open_dir("copy")
-        else:
-            msgBox(1, "文件夹", "文件路径读取错误")
+    def task_finished(self, result):
+        self.setEnabled(True)
+        msgBox(*result)
 
 
 if __name__ == '__main__':
-    # verify_result = VerificationTime.verification()
-    verify_result = False
-    app = QApplication(sys.argv)
-    if not verify_result:
-        buyUi = Main()
-        buyUi.show()
-    else:
-        # MyMsg.QMessageBox(QMessageBox.Warning, '警告', '系统已经过了试用期,请联系管理员', True)
-        pass
-    sys.exit(app.exec_())
+    pass
