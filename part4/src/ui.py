@@ -26,27 +26,6 @@ def msgBox(box_type: int, box_title: str, box_text: str):
     msg_box.exec()
 
 
-class MyQMainWindow(QtWidgets.QWidget):
-    def closeEvent(self, event):
-        """
-        重写closeEvent方法，实现dialog窗体关闭时执行一些代码
-        :param event: close()触发的事件
-        :return: None
-        """
-        path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_ALL_ACCESS)
-        winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
-
-        def Thread():
-            for i in reversed(range(0, 11)):
-                self.setWindowOpacity(i / 10)
-                time.sleep(0.03)
-            sys.exit()
-
-        Thread = threading.Thread(target=Thread)
-        Thread.start()
-
-
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
@@ -86,10 +65,11 @@ class Ui_MainWindow(object):
 class WorkerThread(QThread):
     task_finished = pyqtSignal(list)
 
-    def __init__(self, scan_dir, parent=None):
+    def __init__(self, scan_dir, debug, parent=None):
         super().__init__(parent)
         self.scan_dir = scan_dir
         self.task_dir = None
+        self.debug = debug
 
     def get_exception_info(self, exception):
         output_buffer = io.StringIO()
@@ -117,14 +97,14 @@ class WorkerThread(QThread):
             return self.task_finished.emit([0, "提示", "任务处理完成"])
         except Exception as e:
             print_exc()
-            exception_info = self.get_exception_info(e)
-            return self.task_finished.emit([2, "错误", e.__str__()])
+            exception_info = self.get_exception_info(e) if self.debug else e.__str__()
+            return self.task_finished.emit([2, "错误",  exception_info])
 
 
-class Main(MyQMainWindow, Ui_MainWindow):
+class Main(QtWidgets.QWidget, Ui_MainWindow):
     switch_window = QtCore.pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, debug=False, parent=None):
         super(Main, self).__init__(parent)
         self.setupUi(self)
         self.center()
@@ -132,7 +112,7 @@ class Main(MyQMainWindow, Ui_MainWindow):
         self.config.clicked.connect(self.open_config)
         self.last_task.clicked.connect(self.open_last_task)
         self.submit.clicked.connect(self.start_thread)
-        self.thread = WorkerThread(None)
+        self.thread = WorkerThread(None, debug)
         self.thread.task_finished.connect(self.task_finished)
 
     def center(self):

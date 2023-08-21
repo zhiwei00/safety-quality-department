@@ -1,7 +1,9 @@
 import array
 import hashlib
 import mimetypes
+import os
 import string
+import sys
 from pathlib import Path
 import random
 import copy
@@ -47,7 +49,13 @@ class CloudDisk:
                           "md5": self.spark_md5_hash(self.file)}
 
     def get_execjs(self, file, *args):
-        with open(file, "r", encoding='utf-8') as file:
+        if getattr(sys, 'frozen', False):
+            # 在打包后的应用程序中
+            js_dir = Path(sys._MEIPASS).joinpath('js')
+        else:
+            js_dir: Path = Path(Path(os.path.dirname(os.path.realpath(sys.argv[0])))).joinpath('js')
+        print(js_dir)
+        with open(js_dir.joinpath(file), "r", encoding='utf-8') as file:
             js_code = file.read()
         js_engine = execjs.compile(js_code)
         js_result = js_engine.call(*args)

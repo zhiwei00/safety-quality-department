@@ -1,6 +1,8 @@
 import datetime
+import os
 import re
 import shutil
+import sys
 from pathlib import Path
 from typing import List
 import requests
@@ -11,7 +13,7 @@ class MainProcess:
     def __init__(self, input_dir: str, ocr_ip: str, text_port: str,
                  nari_base: str, nari_user: str, nari_pwd: str):
         self.input_dir: Path = Path(input_dir)
-        self.output_dir: Path = Path("缓存")
+        self.output_dir: Path = Path(os.path.dirname(os.path.realpath(sys.argv[0]))).joinpath("缓存")
         self.run_time = datetime.datetime.today().strftime("%Y年%m月%d日%H时%M分%S秒")
         self.root_path: Path = Path(__file__).parent
         self.ocr_text = f"http://{ocr_ip}:{text_port}/ysocr/ocr"
@@ -68,10 +70,10 @@ class MainProcess:
         return
 
     def packing(self):
-        base_name = self.output_dir / self.run_time
+        base_name = self.output_dir.joinpath(self.run_time)
         self.zip_path = shutil.make_archive(base_name.__str__(),
                                             'zip',
-                                            self.output_dir)
+                                            base_name.__str__())
         return
 
     def run(self):
