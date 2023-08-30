@@ -15,7 +15,7 @@ class Process:
         self.run_time = datetime.datetime.today().strftime("%Y年%m月%d日%H时%M分%S秒")
         self.root_path: Path = Path(__file__).parent
         self.ocr_text = f"http://{ocr_ip}:{text_port}/ysocr/ocr"
-        self.ocr_table = f"http://{ocr_ip}:{table_port}/ysocr/ocr"
+        self.ocr_table = f"http://{ocr_ip}:{table_port}/api/table/task"
         self.pdf_list: List[dict] = self.get_pdf()
         self.zip_path = None
 
@@ -40,27 +40,27 @@ class Process:
                     text = ''.join(text_list).replace(' ', '')
                     if len(text_list):
                         pdf_info['header'] = text_list[0]
-                    find_wbs = re.findall(r"WBS号([A-Za-z0-9]{12})", text)
-                    if find_wbs:
-                        pdf_info['wbs'] = find_wbs[0]
-                    find_department = re.findall(r"项目部门(.*?)项目经理", text)
-                    if find_department:
-                        pdf_info['department'] = find_department[0]
-                    print(pdf_info)
+                    print(text_list)
+                    print(text)
                     break
         return
 
     def get_ocr_table(self):
         for pdf_info in self.pdf_list:
-            response = requests.post("http://172.28.2.102:15263/ysocr/ocr",
-                                     files={"file": open(pdf_info['path'], "rb"),
-                                            "active_desalt_signet": True})
-            print(response.json())
+            response = requests.post(self.ocr_table,
+                                     files={"file": open(pdf_info['source'], "rb"),},
+                                     data={"feature_type_id": 89,
+                                           "async_task": False},
+                                     )
+            if response.status_code == 200 and response.json()['message'] == "任务创建成功":
+                print(response.json())
 
 
 if __name__ == '__main__':
-    p = Process("./扫描",
+    p = Process(r"I:\Project\safety-quality-department\4\扫描",
                 "172.28.2.102",
                 "50000",
-                "15263",)
-    p.get_ocr_table()
+                "15263", )
+    p.pdf_list = [{"source": r"I:\Project\safety-quality-department\4\扫描\W00698 蔡嘉豪、.pdf"}]
+    # p.get_ocr_table()
+    p.get_ocr_text()
