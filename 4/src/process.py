@@ -31,29 +31,76 @@ class Process:
         return pdf_list
 
     def get_ocr_text(self):
+        def find_element_index(lst, target):
+            try:
+                index = lst.index(target)
+                return index
+            except ValueError:
+                return None
+
+        texts = ["WBS号", "项目名称", "外部部门", "项目经理", "外包人员", "联系方式", ["开始时间", "计划进场日期"],
+                 ["离职时间", "计划退场日期"], "补提采购离职时间", "人员级别", "人员类别", "人员单价", "外包供应商",
+                 "是否本地化", "工作地",
+                 "省份", "状态", "有无采购申请", "采购申请到期", "网络安全承诺书", "保密协议", ["姓名", "面试人姓名"]]
         for pdf_info in self.pdf_list:
             response = requests.post(self.ocr_text, files={"file": open(pdf_info['source'], "rb"),
                                                            "active_desalt_signet": True})
             if response.status_code == 200 and response.json()['code'] == 200:
+                tmp = {}
                 for index, row in enumerate(response.json()['img_data_list']):
-                    text_list = [i['text_string'].strip() for i in row['text_info'] if i['text_string'].strip()]
-                    text = ''.join(text_list).replace(' ', '')
-                    if len(text_list):
-                        pdf_info['header'] = text_list[0]
+                    text_list = [i['text_string'].strip().replace(' ', '') for i in row['text_info'] if
+                                 i['text_string'].strip()]
+                    for t in texts:
+                        if isinstance(t, str):
+                            f_index = find_element_index(text_list, t)
+                            if f_index and len(text_list) - 1 > f_index:
+                                tmp[t] = text_list[f_index + 1]
+                        if isinstance(t, list):
+                            f_index = find_element_index(text_list, t[1])
+                            if f_index and len(text_list) - 1 > f_index:
+                                tmp[t[0]] = text_list[f_index + 1]
                     print(text_list)
-                    print(text)
+                    print(tmp)
                     break
         return
 
     def get_ocr_table(self):
+        def find_element_index(lst, target):
+            try:
+                index = lst.index(target)
+                return index
+            except ValueError:
+                return None
+        texts = ["WBS号", "项目名称", "外部部门", "项目经理", "外包人员", "联系方式", ["开始时间", "计划进场日期"],
+                 ["离职时间", "计划退场日期"], "补提采购离职时间", ["人员级别", ""], "人员类别", ["人员单价", "初定人天单价"],
+                 ["外包供应商", "外包单位"],
+                 "是否本地化", "工作地", "省份", "状态", "有无采购申请", "采购申请到期", "网络安全承诺书", "保密协议",
+                 ["姓名", "面试人姓名"]]
         for pdf_info in self.pdf_list:
+            tmp = {}
             response = requests.post(self.ocr_table,
-                                     files={"file": open(pdf_info['source'], "rb"),},
+                                     files={"file": open(pdf_info['source'], "rb"), },
                                      data={"feature_type_id": 89,
                                            "async_task": False},
                                      )
             if response.status_code == 200 and response.json()['message'] == "任务创建成功":
                 print(response.json())
+                text_list = []
+                for index, table in enumerate(response.json()['result'][0]['result']['tables']):
+                    [text_list.extend(i) for i in table['tables'][0]['text_matrix']]
+                    break
+                text_list = [i.strip().replace(' ', '') for i in text_list if i.strip()]
+                print(text_list)
+                for t in texts:
+                    if isinstance(t, str):
+                        f_index = find_element_index(text_list, t)
+                        if f_index and len(text_list) - 1 > f_index:
+                            tmp[t] = text_list[f_index + 1]
+                    if isinstance(t, list):
+                        f_index = find_element_index(text_list, t[1])
+                        if f_index and len(text_list) - 1 > f_index:
+                            tmp[t[0]] = text_list[f_index + 1]
+                print(tmp)
 
 
 if __name__ == '__main__':
@@ -62,5 +109,5 @@ if __name__ == '__main__':
                 "50000",
                 "15263", )
     p.pdf_list = [{"source": r"I:\Project\safety-quality-department\4\扫描\W00698 蔡嘉豪、.pdf"}]
-    # p.get_ocr_table()
-    p.get_ocr_text()
+    p.get_ocr_table()
+    # p.get_ocr_text()
