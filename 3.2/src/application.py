@@ -9,7 +9,7 @@ Application = typer.Typer()
 
 @Application.command()
 def run(debug=0):
-    verify_result = VerificationTime.verification('2023-10-01 00:00:00')
+    verify_result = VerificationTime.verification('2024-10-01 00:00:00')
     app = QApplication(sys.argv)
     if verify_result:
         buyUi = Main(int(debug))

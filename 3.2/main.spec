@@ -5,18 +5,18 @@ block_cipher = None
 
 
 a = Analysis(
-    [r'I:\Project\safety-quality-department\part4\main.py',
-     r'I:\Project\safety-quality-department\part4\src\__init__.py',
-     r'I:\Project\safety-quality-department\part4\src\application.py',
-     r'I:\Project\safety-quality-department\part4\src\cloud_disk.py',
-     r'I:\Project\safety-quality-department\part4\src\config.py',
-     r'I:\Project\safety-quality-department\part4\src\main_process.py',
-     r'I:\Project\safety-quality-department\part4\src\ui.py',
-     r'I:\Project\safety-quality-department\part4\src\verification_time.py'
+    [r'I:\Project\safety-quality-department\3.2\main.py',
+     r'I:\Project\safety-quality-department\3.2\src\__init__.py',
+     r'I:\Project\safety-quality-department\3.2\src\application.py',
+     r'I:\Project\safety-quality-department\3.2\src\cloud_disk.py',
+     r'I:\Project\safety-quality-department\3.2\src\config.py',
+     r'I:\Project\safety-quality-department\3.2\src\main_process.py',
+     r'I:\Project\safety-quality-department\3.2\src\ui.py',
+     r'I:\Project\safety-quality-department\3.2\src\verification_time.py'
      ],
     pathex=[r'I:\Project\safety-quality-department\venv\Lib\site-packages'],
     binaries=[],
-    datas=[(r'I:\Project\safety-quality-department\part4\js\*.js', 'js' )],
+    datas=[(r'I:\Project\safety-quality-department\3.2\js\*.js', 'js' )],
     hiddenimports=['typer', 'PyQt5.sip'],
     hookspath=[],
     hooksconfig={},
